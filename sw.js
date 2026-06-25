@@ -1,5 +1,8 @@
-const CACHE = 'ptm-v2';
-const ASSETS = ['/index.html', '/manifest.json',
+const CACHE = 'ptm-v3';
+const ASSETS = [
+  '/ptm-10k/',
+  '/ptm-10k/index.html',
+  '/ptm-10k/manifest.json',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
@@ -27,6 +30,6 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE).then(c => c.put(e.request, clone));
       }
       return res;
-    })).catch(() => caches.match('/index.html'))
+    })).catch(() => caches.match('/ptm-10k/index.html'))
   );
 });
