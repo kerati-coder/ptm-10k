@@ -1,9 +1,8 @@
-const CACHE = 'ptm-v1';
-const ASSETS = ['/', '/index.html', '/manifest.json',
+const CACHE = 'ptm-v2';
+const ASSETS = ['/index.html', '/manifest.json',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap',
   'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js'
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
 ];
 
 self.addEventListener('install', e => {
