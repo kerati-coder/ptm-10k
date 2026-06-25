@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PTM 10K">
+<meta name="theme-color" content="#E8501A">
+<title>Personal Training Mission</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;background:#F6F4F1}
+body{font-family:'IBM Plex Sans Thai',sans-serif;-webkit-font-smoothing:antialiased}
+#splash{position:fixed;inset:0;background:#F6F4F1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9999;transition:opacity .4s}
+#splash-icon{font-size:54px;animation:spl 1.2s infinite}
+@keyframes spl{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div id="splash-icon">⚡</div>
+  <div style="font-size:20px;font-weight:700;color:#1C1A2E;margin-top:4px">Personal Training Mission</div>
+  <div style="font-size:12px;color:#B0ACC4;margin-top:4px">กำลังโหลด...</div>
+</div>
+<div id="root"></div>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback}=React;
+
+// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+const C={
+  bg:"#F6F4F1",bg2:"#EFECEA",white:"#FFFFFF",ink:"#1C1A2E",inkMid:"#6B6785",inkLight:"#B0ACC4",
+  border:"#E4E0DB",orange:"#E8501A",orangeL:"#FFF0EB",orangeM:"#FFD4C2",
+  gold:"#C97B00",goldL:"#FEF7E0",goldM:"#FDE68A",green:"#0A7C52",greenL:"#EDFBF4",greenM:"#A7F3D0",
+  blue:"#1D4ED8",blueL:"#EFF4FF",blueM:"#BFDBFE",purple:"#6D28D9",purpleL:"#F4F0FF",
+  pink:"#BE185D",pinkL:"#FDF2F8",cyan:"#0E7490",cyanL:"#ECFEFF",gray:"#64748B",grayL:"#F1F0EE",red:"#DC2626",redL:"#FEF2F2",
+};
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const PHASES=[
+  {id:1,name:"Base Building",emoji:"🏗️",weeks:[1,2,3,4],color:C.blue,bg:C.blueL},
+  {id:2,name:"Build 1",emoji:"📈",weeks:[5,6,7,8],color:C.green,bg:C.greenL},
+  {id:3,name:"Build 2",emoji:"🚀",weeks:[9,10,11,12],color:C.gold,bg:C.goldL},
+  {id:4,name:"Peak",emoji:"⚡",weeks:[13,14,15,16],color:C.orange,bg:C.orangeL},
+  {id:5,name:"Taper + Race",emoji:"🏁",weeks:[17,18],color:C.purple,bg:C.purpleL},
+];
+const ST={
+  run_easy:    {label:"Easy Run",  emoji:"🏃",color:C.blue,  light:C.blueL,  mid:C.blueM,  xpFn:(k)=>Math.round(80*k)},
+  run_tempo:   {label:"Tempo Run", emoji:"🔥",color:C.gold,  light:C.goldL,  mid:C.goldM,  xpFn:(k)=>Math.round(120*k)},
+  run_interval:{label:"Interval",  emoji:"⚡",color:C.orange,light:C.orangeL,mid:C.orangeM,xpFn:(k)=>200+Math.round(50*k)},
+  run_long:    {label:"Long Run",  emoji:"⭐",color:C.green, light:C.greenL, mid:C.greenM, xpFn:(k)=>Math.round(100*k)},
+  gym_push:    {label:"Push Day",  emoji:"💪",color:C.purple,light:C.purpleL,mid:"#DDD6FE",xpFn:()=>150},
+  gym_pull:    {label:"Pull Day",  emoji:"🦾",color:C.pink,  light:C.pinkL,  mid:"#FBCFE8",xpFn:()=>150},
+  gym_legs:    {label:"Legs+Abs",  emoji:"🦵",color:C.cyan,  light:C.cyanL,  mid:"#A5F3FC",xpFn:()=>160},
+  walk:        {label:"Walk",      emoji:"🚶",color:C.gray,  light:C.grayL,  mid:"#E2E8F0",xpFn:()=>50},
+  light_gym:   {label:"Light Gym", emoji:"🏋️",color:C.gray,  light:C.grayL,  mid:"#E2E8F0",xpFn:()=>80},
+  race:        {label:"RACE DAY!", emoji:"🏆",color:C.gold,  light:"#FFFBE8",mid:C.goldM,  xpFn:()=>1000},
+};
+const LEVELS=[
+  {lv:1,name:"Rookie Runner",     emoji:"🐣",xp:0},
+  {lv:2,name:"สมัครเล่น",         emoji:"🏃",xp:600},
+  {lv:3,name:"Consistent Athlete",emoji:"⚡",xp:1800},
+  {lv:4,name:"Tempo Master",      emoji:"🔥",xp:3600},
+  {lv:5,name:"Speed Demon",       emoji:"💨",xp:6500},
+  {lv:6,name:"Elite Runner",      emoji:"🌟",xp:10000},
+  {lv:7,name:"10K Champion",      emoji:"🏆",xp:14000},
+];
+const BADGES=[
+  {id:"first_run",  emoji:"👟",name:"ก้าวแรก",      desc:"วิ่งครั้งแรก",         chk:s=>s.runs>=1},
+  {id:"first_gym",  emoji:"💪",name:"Iron Beginner", desc:"ออกยิมครั้งแรก",       chk:s=>s.gym>=1},
+  {id:"first_long", emoji:"🛣️", name:"Long Runner",  desc:"Long Run ครั้งแรก",    chk:s=>s.longRuns>=1},
+  {id:"first_int",  emoji:"⚡",name:"Speed Initiate",desc:"Interval ครั้งแรก",    chk:s=>s.intervals>=1},
+  {id:"km10",       emoji:"🎽",name:"10KM Club",     desc:"วิ่งสะสม 10 กม.",      chk:s=>s.km>=10},
+  {id:"km50",       emoji:"🏅",name:"50KM Warrior",  desc:"วิ่งสะสม 50 กม.",      chk:s=>s.km>=50},
+  {id:"km100",      emoji:"💯",name:"Century Runner",desc:"วิ่งสะสม 100 กม.",     chk:s=>s.km>=100},
+  {id:"km150",      emoji:"🌏",name:"Endless Runner",desc:"วิ่งสะสม 150 กม.",     chk:s=>s.km>=150},
+  {id:"long10",     emoji:"🔭",name:"Pre-Race Ready",desc:"Long Run 10 กม.+",     chk:s=>s.longestRun>=10},
+  {id:"streak3",    emoji:"🔥",name:"On Fire",       desc:"ซ้อมติดกัน 3 วัน",     chk:s=>s.maxStreak>=3},
+  {id:"streak7",    emoji:"🌟",name:"Week Warrior",  desc:"ซ้อมติดกัน 7 วัน",     chk:s=>s.maxStreak>=7},
+  {id:"gym10",      emoji:"🐀",name:"Gym Rat",       desc:"ออกยิม 10 ครั้ง",      chk:s=>s.gym>=10},
+  {id:"gym30",      emoji:"🏋️",name:"Iron Addict",   desc:"ออกยิม 30 ครั้ง",      chk:s=>s.gym>=30},
+  {id:"pwk",        emoji:"✨",name:"Perfect Week",  desc:"สัปดาห์ครบ session",   chk:s=>s.perfectWks>=1},
+  {id:"ph1",        emoji:"🏗️",name:"Phase 1 Done",  desc:"จบ Base Building",     chk:s=>s.phaseDone>=1},
+  {id:"ph2",        emoji:"📈",name:"Phase 2 Done",  desc:"จบ Build 1",           chk:s=>s.phaseDone>=2},
+  {id:"ph3",        emoji:"🚀",name:"Phase 3 Done",  desc:"จบ Build 2",           chk:s=>s.phaseDone>=3},
+  {id:"ph4",        emoji:"⚡",name:"Peak Conqueror",desc:"จบ Peak Phase",        chk:s=>s.phaseDone>=4},
+  {id:"race",       emoji:"🏆",name:"10K Finisher!", desc:"จบ Race Day 10K!",     chk:s=>s.raceDone},
+];
+const RPE_LABELS={1:"ชิลมาก",2:"ชิล",3:"สบาย",4:"สบายพอดี",5:"พอดี",6:"เริ่มหนัก",7:"หนัก",8:"หนักมาก",9:"หนักสุด",10:"หมดแรง"};
+const RPE_COLORS={1:C.green,2:C.green,3:"#22C55E",4:"#84CC16",5:"#EAB308",6:"#F97316",7:C.orange,8:"#EF4444",9:C.red,10:"#991B1B"};
+
+// ─── SESSION GENERATOR ────────────────────────────────────────────────────────
+const START=new Date("2026-06-22");
+const RACE_DATE=new Date("2026-10-25");
+const fd=d=>{const D=new Date(d);return `${D.getFullYear()}-${String(D.getMonth()+1).padStart(2,"0")}-${String(D.getDate()).padStart(2,"0")}`;};
+const MONTHS_TH=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const DAYS_TH=["อา","จ","อ","พ","พฤ","ศ","ส"];
+const dateLabel=s=>{const d=new Date(s);return `${d.getDate()} ${MONTHS_TH[d.getMonth()]}`;};
+const dayTh=s=>DAYS_TH[new Date(s).getDay()];
+
+function genSessions(){
+  const S=[];
+  for(let w=1;w<=18;w++){
+    const ph=w<=4?1:w<=8?2:w<=12?3:w<=16?4:5;
+    const mon=new Date(START);mon.setDate(START.getDate()+(w-1)*7);
+    const D=(n)=>{const d=new Date(mon);d.setDate(mon.getDate()+n);return fd(d);};
+    const P=(s)=>S.push({...s,phase:ph,week:w,xp:ST[s.type]?.xpFn(s.km??0)??0});
+    if(w<=4){
+      P({id:`w${w}m`,date:D(0),type:"gym_legs",   title:"Legs & Abs Day",       km:0  });
+      P({id:`w${w}t`,date:D(1),type:"run_easy",   title:"Easy Run 3 กม.",        km:3  });
+      P({id:`w${w}w`,date:D(2),type:"gym_push",   title:"Push Day",              km:0  });
+      P({id:`w${w}r`,date:D(3),type:"run_easy",   title:"Easy Run 3 กม. + Walk", km:3  });
+      P({id:`w${w}f`,date:D(4),type:"gym_pull",   title:"Pull Day",              km:0  });
+      P({id:`w${w}s`,date:D(5),type:"run_long",   title:"Long Run 4–5 กม.",      km:4.5});
+    }else if(w<=8){
+      P({id:`w${w}m`,date:D(0),type:"gym_legs",    title:"Legs & Abs Day",       km:0  });
+      P({id:`w${w}t`,date:D(1),type:"run_easy",    title:"Easy Run 4 กม.",       km:4  });
+      P({id:`w${w}w`,date:D(2),type:"gym_push",    title:"Push Day",             km:0  });
+      P({id:`w${w}r`,date:D(3),type:"run_interval",title:"Interval 5×400m",      km:3.5});
+      P({id:`w${w}f`,date:D(4),type:"gym_pull",    title:"Pull Day",             km:0  });
+      P({id:`w${w}s`,date:D(5),type:"run_long",    title:"Long Run 6–7 กม.",     km:6.5});
+    }else if(w<=12){
+      P({id:`w${w}m`,date:D(0),type:"gym_legs",    title:"Legs & Abs Day",       km:0  });
+      P({id:`w${w}t`,date:D(1),type:"run_tempo",   title:"Tempo Run 5 กม.",      km:5  });
+      P({id:`w${w}w`,date:D(2),type:"gym_push",    title:"Push Day",             km:0  });
+      P({id:`w${w}r`,date:D(3),type:"run_interval",title:"Interval 6×400m",      km:4  });
+      P({id:`w${w}f`,date:D(4),type:"gym_pull",    title:"Pull Day",             km:0  });
+      P({id:`w${w}s`,date:D(5),type:"run_long",    title:"Long Run 8–9 กม.",     km:8.5});
+    }else if(w<=16){
+      P({id:`w${w}m`,date:D(0),type:"gym_push",    title:"Push Day (Light)",     km:0  });
+      P({id:`w${w}t`,date:D(1),type:"run_tempo",   title:"Tempo Run 6–7 กม.",   km:6.5});
+      P({id:`w${w}w`,date:D(2),type:"walk",        title:"Active Recovery Walk", km:0  });
+      P({id:`w${w}r`,date:D(3),type:"run_interval",title:"Interval 4×1000m",    km:6  });
+      P({id:`w${w}f`,date:D(4),type:"gym_pull",    title:"Pull Day (Light)",     km:0  });
+      P({id:`w${w}s`,date:D(5),type:"run_long",    title:"Long Run 10–12 กม.",  km:11 });
+    }else if(w===17){
+      P({id:`w${w}m`,date:D(0),type:"light_gym",   title:"Full Body Light Gym",  km:0});
+      P({id:`w${w}t`,date:D(1),type:"run_easy",    title:"Easy Run 5 กม.",       km:5});
+      P({id:`w${w}w`,date:D(2),type:"walk",        title:"Walk + Foam Roll",     km:0});
+      P({id:`w${w}r`,date:D(3),type:"run_interval",title:"Easy Interval 3×400m", km:3});
+      P({id:`w${w}s`,date:D(5),type:"run_long",    title:"Long Run 7 กม.",       km:7});
+    }else{
+      P({id:`w${w}t`,date:D(1),type:"run_easy",    title:"Easy Jog 3 กม.",       km:3  });
+      P({id:`w${w}r`,date:D(3),type:"run_easy",    title:"Shake-out 2 กม.",      km:2  });
+      P({id:`w${w}s`,date:D(5),type:"run_easy",    title:"Pre-Race Jog 1.5 กม.", km:1.5});
+      P({id:`w${w}u`,date:"2026-10-25",type:"race",title:"🏆 RACE DAY — 10K!",  km:10 });
+    }
+  }
+  return S;
+}
+const SESSIONS=genSessions();
+const TOTAL_SESSIONS=SESSIONS.length;
+
+// ─── TIME / PACE UTILITIES ────────────────────────────────────────────────────
+function parseTimeToSecs(str){
+  if(!str)return null;
+  const parts=str.trim().split(':').map(Number);
+  if(parts.some(isNaN))return null;
+  if(parts.length===2)return parts[0]*60+parts[1];
+  if(parts.length===3)return parts[0]*3600+parts[1]*60+parts[2];
+  return null;
+}
+function fmtSecs(s){
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.round(s%60);
+  if(h>0)return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+function fmtPace(secPerKm){
+  const m=Math.floor(secPerKm/60),s=Math.round(secPerKm%60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function calcPaceSecKm(timeStr,km){
+  const s=parseTimeToSecs(timeStr);
+  if(!s||!km||km<0.5)return null;
+  return s/km;
+}
+
+// ─── 10K PREDICTION ENGINE ────────────────────────────────────────────────────
+function predict10K(done){
+  const today=fd(new Date());
+  // Collect all logged run sessions with time
+  const runs=SESSIONS
+    .filter(s=>done[s.id]?.time&&s.date<=today&&s.type!=='race'&&s.type.startsWith('run_'))
+    .map(s=>{
+      const d=done[s.id];
+      const secs=parseTimeToSecs(d.time);
+      const km=parseFloat(d.km)||s.km;
+      if(!secs||km<1.5)return null;
+      return{type:s.type,km,secs,pace:secs/km,rpe:d.rpe||5,date:s.date,week:s.week};
+    })
+    .filter(Boolean)
+    .sort((a,b)=>b.date.localeCompare(a.date));
+
+  // Baseline from user's initial data (5K=39min actual)
+  const baseline10KSecs=5880; // 1:38:00
+
+  if(!runs.length)return{
+    seconds:baseline10KSecs,formatted:"1:38:00",pacePer10:"9:48",
+    confidence:"baseline",dataPoints:0,adherence:0,
+    note:"เพิ่มเวลาซ้อมใน Log เพื่อให้ทำนายแม่นยำขึ้น"
+  };
+
+  const preds=[];
+  runs.slice(0,16).forEach((r,i)=>{
+    const rec=Math.pow(0.87,i); // recency decay
+    // RPE adjustment: effort-adjusted pace → actual capability
+    // Low RPE = underperformed (could go faster), High RPE = near max
+    const rpeAdj=r.rpe<=4?0.95:r.rpe<=6?1.0:r.rpe<=8?1.04:1.08;
+    let p10=null,rel=1;
+    switch(r.type){
+      case'run_tempo':
+        // Tempo ≈ 10K effort or slightly faster. 10K ~ 2-4% slower than tempo pace
+        p10=r.pace*1.03*600; rel=4.0; break;
+      case'run_interval':
+        // Interval ~5K pace. 10K ~ 10-14% slower than interval pace
+        p10=r.pace*1.12*600; rel=3.0; break;
+      case'run_long':
+        // Long run ~10-13% slower than 10K race pace
+        p10=r.pace*0.88*600; rel=2.0; break;
+      case'run_easy':
+        // Easy run ~16-20% slower than 10K
+        p10=r.pace*0.82*600; rel=1.0; break;
+    }
+    if(p10&&p10>3600&&p10<9600){
+      preds.push({p:p10*rpeAdj,w:rec*rel});
+    }
+  });
+
+  if(!preds.length)return{
+    seconds:baseline10KSecs,formatted:"1:38:00",pacePer10:"9:48",
+    confidence:"ข้อมูลไม่พอ",dataPoints:0,adherence:0,note:"log เวลาซ้อมก่อนนะครับ"
+  };
+
+  const tw=preds.reduce((a,p)=>a+p.w,0);
+  let pred=preds.reduce((a,p)=>a+p.p*p.w,0)/tw;
+
+  // Adherence penalty: poor adherence → weaker predicted performance
+  const scheduled=SESSIONS.filter(s=>s.date<=today).length;
+  const doneCnt=Object.keys(done).length;
+  const adh=scheduled>0?Math.min(1,doneCnt/scheduled):0.5;
+  pred*=(1+(1-adh)*0.06); // up to 6% slower if poor adherence
+
+  // Blend with baseline (baseline weight decreases as data grows)
+  const blendW=Math.max(0,1-preds.length*0.08);
+  pred=pred*(1-blendW)+baseline10KSecs*blendW;
+
+  pred=Math.max(3900,Math.min(9000,pred));
+  const secs=Math.round(pred);
+  const conf=preds.length>=10?"สูง 🎯":preds.length>=5?"ปานกลาง ✓":preds.length>=2?"ต่ำ (log เพิ่ม)":"น้อยมาก";
+
+  return{
+    seconds:secs,formatted:fmtSecs(secs),pacePer10:fmtPace(secs/10),
+    confidence:conf,dataPoints:preds.length,adherence:Math.round(adh*100),
+    note:preds.length<4?"log เวลาทุก session เพื่อให้ทำนายดีขึ้น":null,
+    improvementVsBaseline:Math.round((baseline10KSecs-secs)/60*10)/10
+  };
+}
+
+// ─── WEEKLY REPORT CALCULATOR ─────────────────────────────────────────────────
+function calcWeekReport(week,done){
+  const ws=SESSIONS.filter(s=>s.week===week);
+  const ds=ws.filter(s=>done[s.id]);
+  const planned=ws.length,doneCnt=ds.length;
+  const adh=planned>0?Math.round(doneCnt/planned*100):0;
+
+  const plannedKm=ws.reduce((a,s)=>a+s.km,0);
+  const actualKm=ds.reduce((a,s)=>a+(parseFloat(done[s.id]?.km)||s.km),0);
+  const kmRate=plannedKm>0?Math.round(actualKm/plannedKm*100):0;
+
+  // Pace stats (runs only)
+  const runsDone=ds.filter(s=>s.type.startsWith('run_'));
+  const paces=runsDone.map(s=>calcPaceSecKm(done[s.id]?.time,parseFloat(done[s.id]?.km)||s.km)).filter(Boolean);
+  const avgPace=paces.length?paces.reduce((a,b)=>a+b,0)/paces.length:null;
+
+  // Best pace run
+  let bestPace=null,bestSession=null;
+  runsDone.forEach(s=>{
+    const p=calcPaceSecKm(done[s.id]?.time,parseFloat(done[s.id]?.km)||s.km);
+    if(p&&(!bestPace||p<bestPace)){bestPace=p;bestSession=s;}
+  });
+
+  // RPE
+  const rpes=ds.map(s=>done[s.id]?.rpe).filter(Boolean);
+  const avgRPE=rpes.length?rpes.reduce((a,b)=>a+b,0)/rpes.length:null;
+
+  // Training Load Score: Σ(km × RPE) for runs, Σ(RPE × 3) for gym
+  const load=Math.round(ds.reduce((a,s)=>{
+    const rpe=done[s.id]?.rpe||5;
+    const km=parseFloat(done[s.id]?.km)||s.km;
+    return a+(s.type.startsWith('run_')?km*rpe:rpe*3);
+  },0));
+
+  // Performance Score (0-100)
+  const adhPts=(adh/100)*40;
+  const kmPts=Math.min(30,(kmRate/100)*30);
+  const rpePts=avgRPE?30*(1-Math.abs(avgRPE-5.5)/8):15;
+  const perfScore=Math.round(Math.min(100,adhPts+kmPts+rpePts));
+
+  // Body status based on avg RPE
+  const bodyStatus=!avgRPE?"ไม่มีข้อมูล":avgRPE<4?"สดมาก 🌟":avgRPE<6?"ดี ✅":avgRPE<8?"ล้าปานกลาง ⚠️":"ล้ามาก 🔴";
+
+  // Weekly tips based on phase + performance
+  const phase=PHASES.find(p=>p.weeks.includes(week));
+  const tips=[];
+  if(adh<80)tips.push("พยายามทำให้ครบทุก session สัปดาห์หน้า");
+  if(avgRPE&&avgRPE>8)tips.push("ร่างกายล้า — เพิ่มเวลานอนและเน้น recovery");
+  if(avgRPE&&avgRPE<4&&adh>90)tips.push("ร่างกายสดมาก — ลอง push pace เพิ่มขึ้นเล็กน้อย");
+  if(kmRate<70)tips.push("ระยะทำได้น้อย — ตรวจสอบการวางแผนเวลา");
+  if(!tips.length&&phase)tips.push(`Phase ${phase.id}: ${phase.name} — ${phase.id<=2?"เน้น aerobic base ต่อไป":phase.id<=4?"เริ่มเน้น quality sessions":"ลด volume รักษาความเร็ว"}`);
+
+  return{
+    week,adh,doneCnt,planned,plannedKm:Math.round(plannedKm*10)/10,
+    actualKm:Math.round(actualKm*10)/10,kmRate,avgPace,avgRPE:avgRPE?Math.round(avgRPE*10)/10:null,
+    load,perfScore,bodyStatus,bestPace,bestSession,tips,phase
+  };
+}
+
+// ─── GAMIFICATION STATS ───────────────────────────────────────────────────────
+function calcStats(done){
+  const ids=new Set(Object.keys(done));
+  let totalXP=0,km=0,runs=0,gym=0,intervals=0,longRuns=0,longestRun=0,perfectWks=0,raceDone=false,phaseDone=0,maxStreak=0;
+  const weeklyKm={},weeklyDone={};
+  SESSIONS.forEach(s=>{
+    if(!weeklyDone[s.week])weeklyDone[s.week]={done:0,total:0};
+    weeklyDone[s.week].total++;
+    if(!weeklyKm[s.week])weeklyKm[s.week]=0;
+    if(ids.has(s.id)){
+      const d=done[s.id];const aKm=parseFloat(d.km)||s.km;
+      totalXP+=d.xp??s.xp;km+=aKm;weeklyKm[s.week]+=aKm;weeklyDone[s.week].done++;
+      if(s.type.startsWith('run_')||s.type==='race'){runs++;if(aKm>longestRun)longestRun=aKm;}
+      if(s.type==='run_long'||s.type==='race')longRuns++;
+      if(s.type==='run_interval')intervals++;
+      if(s.type.startsWith('gym_')||s.type==='light_gym')gym++;
+      if(s.type==='race')raceDone=true;
+    }
+  });
+  Object.values(weeklyDone).forEach(w=>{if(w.total>0&&w.done===w.total)perfectWks++;});
+  PHASES.forEach(ph=>{const phS=SESSIONS.filter(s=>s.phase===ph.id);if(phS.length>0&&phS.every(s=>ids.has(s.id)))phaseDone=Math.max(phaseDone,ph.id);});
+  const cd=new Set();SESSIONS.forEach(s=>{if(ids.has(s.id))cd.add(s.date);});
+  const sd=[...cd].sort();let cur=0;
+  for(let i=0;i<sd.length;i++){cur=i===0?1:(new Date(sd[i])-new Date(sd[i-1]))/86400000===1?cur+1:1;if(cur>maxStreak)maxStreak=cur;}
+  let lvObj=LEVELS[0];for(const l of LEVELS){if(totalXP>=l.xp)lvObj=l;}
+  const nextLv=LEVELS[lvObj.lv]??null;
+  const lvPct=nextLv?Math.min(100,Math.round(((totalXP-lvObj.xp)/(nextLv.xp-lvObj.xp))*100)):100;
+  const earnedBadges=BADGES.filter(b=>b.chk({runs,gym,intervals,longRuns,longestRun:Math.round(longestRun*10)/10,km:Math.round(km*10)/10,perfectWks,phaseDone,maxStreak,raceDone})).map(b=>b.id);
+  return{totalXP,km:Math.round(km*10)/10,runs,gym,intervals,longRuns,longestRun:Math.round(longestRun*10)/10,perfectWks,phaseDone,maxStreak,raceDone,weeklyKm,weeklyDone,earnedBadges,lvObj,nextLv,lvPct,totalSessions:ids.size,completionRate:Math.round((ids.size/TOTAL_SESSIONS)*100)};
+}
+const getCW=()=>{const d=Math.floor((new Date()-START)/(7*86400000));return Math.max(1,Math.min(18,d+1));};
+const daysToRace=()=>Math.max(0,Math.ceil((RACE_DATE-new Date())/86400000));
+
+// ─── GLOBAL CSS ───────────────────────────────────────────────────────────────
+const CSS=`
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#F6F4F1;font-family:'IBM Plex Sans Thai',sans-serif;color:#1C1A2E;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+::-webkit-scrollbar{display:none}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes xpFloat{0%{opacity:0;transform:translateX(-50%) translateY(0) scale(.7)}15%{opacity:1;transform:translateX(-50%) translateY(-10px) scale(1.05)}70%{opacity:1;transform:translateX(-50%) translateY(-50px)}100%{opacity:0;transform:translateX(-50%) translateY(-90px)}}
+@keyframes popIn{0%{opacity:0;transform:translate(-50%,-50%) scale(.55)}65%{transform:translate(-50%,-50%) scale(1.07)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
+@keyframes scoreCount{from{opacity:0}to{opacity:1}}
+.card{background:#fff;border-radius:20px;border:1px solid #E4E0DB}
+.shadow-sm{box-shadow:0 1px 4px rgba(28,26,46,.06)}
+.shadow-md{box-shadow:0 4px 16px rgba(28,26,46,.08)}
+.tap{cursor:pointer;transition:transform .12s,opacity .12s;user-select:none}
+.tap:active{transform:scale(.97);opacity:.82}
+.pill{border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px}
+.btn-primary{background:#E8501A;color:#fff;border:none;border-radius:14px;padding:15px 20px;font-family:'IBM Plex Sans Thai',sans-serif;font-weight:600;font-size:15px;cursor:pointer;width:100%;transition:opacity .15s}
+.btn-primary:active{opacity:.8}
+.btn-ghost{background:#F1F0EE;color:#6B6785;border:none;border-radius:12px;padding:11px 18px;font-family:'IBM Plex Sans Thai',sans-serif;font-size:13px;font-weight:500;cursor:pointer}
+.btn-ghost:active{opacity:.7}
+.inp{background:#F6F4F1;border:1.5px solid #E4E0DB;border-radius:12px;color:#1C1A2E;padding:12px 14px;font-family:'IBM Plex Sans Thai',sans-serif;font-size:14px;width:100%;outline:none;transition:border-color .15s}
+.inp:focus{border-color:#E8501A;background:#fff}
+.tab-btn{background:none;border:none;cursor:pointer;padding:8px 4px 4px;display:flex;flex-direction:column;align-items:center;gap:3px;color:#B0ACC4;font-size:10px;font-weight:500;font-family:'IBM Plex Sans Thai',sans-serif;flex:1;transition:color .18s;min-width:44px}
+.tab-btn.on{color:#E8501A}
+.bar-wrap{height:7px;background:#EFECEA;border-radius:100px;overflow:hidden}
+.bar-fill{height:100%;border-radius:100px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.xp-fill{background:linear-gradient(90deg,#E8501A,#FF8C42,#E8501A);background-size:200%;animation:shimmer 2.5s linear infinite}
+.today-glow{box-shadow:0 0 0 2px #E8501A,0 4px 20px rgba(232,80,26,.2)!important}
+.badge-locked{filter:grayscale(1) opacity(.3)}
+.rpe-btn{background:none;border:2px solid #E4E0DB;border-radius:10px;cursor:pointer;padding:8px 4px;font-size:13px;font-weight:700;font-family:'IBM Plex Sans Thai',sans-serif;flex:1;transition:all .12s;min-width:44px;min-height:44px}
+`;
+
+// ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
+function STypePill({type}){
+  const s=ST[type]||ST.walk;
+  return <span className="pill" style={{background:s.light,color:s.color}}>{s.emoji} {s.label}</span>;
+}
+function LevelRing({pct,emoji,size=72}){
+  const r=29,circ=2*Math.PI*r,dash=circ*(pct/100);
+  return(
+    <div style={{width:size,height:size,position:"relative",flexShrink:0}}>
+      <svg width={size} height={size} viewBox="0 0 68 68">
+        <circle cx={34} cy={34} r={r} fill="none" stroke="#EFECEA" strokeWidth={5}/>
+        <circle cx={34} cy={34} r={r} fill="none" stroke="#E8501A" strokeWidth={5}
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform="rotate(-90 34 34)"
+          style={{transition:"stroke-dasharray .6s"}}/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.38}}>{emoji}</div>
+    </div>
+  );
+}
+function ScoreRing({score,size=80}){
+  const r=28,circ=2*Math.PI*r,dash=circ*(score/100);
+  const col=score>=80?C.green:score>=60?C.gold:score>=40?C.orange:C.red;
+  return(
+    <div style={{width:size,height:size,position:"relative",flexShrink:0}}>
+      <svg width={size} height={size} viewBox="0 0 68 68">
+        <circle cx={34} cy={34} r={r} fill="none" stroke="#EFECEA" strokeWidth={6}/>
+        <circle cx={34} cy={34} r={r} fill="none" stroke={col} strokeWidth={6}
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform="rotate(-90 34 34)"
+          style={{transition:"stroke-dasharray .8s"}}/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <span style={{fontSize:20,fontWeight:800,color:col,lineHeight:1}}>{score}</span>
+        <span style={{fontSize:8,color:C.inkLight,fontWeight:500}}>/100</span>
+      </div>
+    </div>
+  );
+}
+function PhaseBar({phaseId,weeklyDone}){
+  const ph=PHASES[phaseId-1];
+  const wks=ph.weeks;
+  const done=wks.reduce((s,w)=>s+(weeklyDone[w]?.done||0),0);
+  const total=wks.reduce((s,w)=>s+(weeklyDone[w]?.total||0),0);
+  const pct=total>0?Math.round((done/total)*100):0;
+  return(
+    <div style={{marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <span style={{fontSize:12,fontWeight:500}}>{ph.emoji} {ph.name}</span>
+        <span style={{fontSize:11,color:pct===100?C.green:C.inkLight,fontWeight:600}}>{done}/{total}</span>
+      </div>
+      <div className="bar-wrap"><div className="bar-fill" style={{width:`${pct}%`,background:ph.color}}/></div>
+    </div>
+  );
+}
+function WeekKmChart({weeklyKm}){
+  const cw=getCW();
+  const show=Array.from({length:18},(_,i)=>i+1).slice(Math.max(0,cw-6),cw+2);
+  const maxKm=Math.max(...show.map(w=>weeklyKm[w]||0),5);
+  const W=44;
+  return(
+    <svg width="100%" height={110} viewBox={`0 0 ${show.length*W} 110`} preserveAspectRatio="xMidYMid meet">
+      <line x1={0} y1={78} x2={show.length*W} y2={78} stroke={C.border} strokeWidth={1}/>
+      {show.map((w,i)=>{
+        const km=weeklyKm[w]||0,h=Math.round((km/maxKm)*62),isCur=w===cw,x=i*W+5;
+        return(
+          <g key={w}>
+            <rect x={x} y={78-h} width={W-10} height={h} rx={5} fill={isCur?C.orange:km>0?C.blueM:C.bg2}/>
+            {km>0&&<text x={x+(W-10)/2} y={72-h} textAnchor="middle" fill={isCur?C.orange:C.inkMid} fontSize={9} fontWeight={isCur?"700":"400"}>{km.toFixed(1)}</text>}
+            <text x={x+(W-10)/2} y={94} textAnchor="middle" fill={isCur?C.orange:C.inkLight} fontSize={10} fontWeight={isCur?"700":"400"}>W{w}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── SESSION CARD ─────────────────────────────────────────────────────────────
+function SessionCard({s,doneData,onTap}){
+  const st=ST[s.type]||ST.walk;
+  const today=fd(new Date());
+  const isToday=s.date===today,isPast=s.date<today,isDone=!!doneData,isRace=s.type==="race";
+  const pace=isDone?calcPaceSecKm(doneData.time,parseFloat(doneData.km)||s.km):null;
+  return(
+    <div className={`card tap shadow-sm ${isToday&&!isDone?"today-glow":""}`}
+      onClick={()=>onTap(s)}
+      style={{padding:"14px 16px",marginBottom:8,background:isDone?C.greenL:isRace?C.goldL:C.white,
+        borderColor:isDone?C.greenM:isRace?"#FDE68A":isToday?C.orange:C.border,opacity:isPast&&!isDone?.55:1}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:46,height:46,borderRadius:14,background:isDone?C.greenL:st.light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0,border:`1px solid ${isDone?C.greenM:st.mid}`}}>
+          {isDone?"✅":st.emoji}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}>
+            <STypePill type={s.type}/>
+            {isToday&&!isDone&&<span className="pill" style={{background:C.orangeL,color:C.orange,animation:"pulse 1.5s infinite"}}>● วันนี้</span>}
+          </div>
+          <div style={{fontSize:14,fontWeight:600,color:C.ink,marginBottom:2}}>{s.title}</div>
+          <div style={{fontSize:11,color:C.inkMid}}>
+            {dayTh(s.date)} {dateLabel(s.date)}{s.km>0?` · ${s.km} กม.`:""} · <span style={{color:C.gold,fontWeight:600}}>+{s.xp} XP</span>
+          </div>
+          {isDone&&(doneData.time||doneData.rpe)&&(
+            <div style={{display:"flex",gap:8,marginTop:3,flexWrap:"wrap"}}>
+              {doneData.time&&<span style={{fontSize:11,color:C.green,fontWeight:500}}>⏱ {doneData.time}</span>}
+              {pace&&<span style={{fontSize:11,color:C.blue,fontWeight:500}}>📍 {fmtPace(pace)}/กม.</span>}
+              {doneData.rpe&&<span style={{fontSize:11,fontWeight:500,color:RPE_COLORS[doneData.rpe]}}>RPE {doneData.rpe}/10</span>}
+            </div>
+          )}
+        </div>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.inkLight} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>
+  );
+}
+
+// ─── ENHANCED LOG MODAL ───────────────────────────────────────────────────────
+function LogModal({session,doneData,onLog,onUnlog,onClose}){
+  const st=ST[session.type]||ST.walk;
+  const isRun=session.type.startsWith('run_')||session.type==='race';
+  const [km,setKm]=useState(String(doneData?.km??session.km??0));
+  const [time,setTime]=useState(doneData?.time??"");
+  const [rpe,setRpe]=useState(doneData?.rpe??5);
+  const [feel,setFeel]=useState(doneData?.feel??3);
+  const [notes,setNotes]=useState(doneData?.notes??"");
+
+  const pace=useMemo(()=>{
+    const p=calcPaceSecKm(time,parseFloat(km));
+    return p?fmtPace(p):null;
+  },[time,km]);
+
+  const FEELS=[{v:1,e:"😓"},{v:2,e:"😕"},{v:3,e:"😐"},{v:4,e:"😊"},{v:5,e:"🔥"}];
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"flex-end"}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(28,26,46,.45)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+      <div style={{position:"relative",zIndex:1,width:"100%",background:C.white,borderRadius:"24px 24px 0 0",maxHeight:"92dvh",overflowY:"auto",animation:"slideUp .28s cubic-bezier(.4,0,.2,1)",paddingBottom:"max(24px,env(safe-area-inset-bottom))"}}>
+        <div style={{display:"flex",justifyContent:"center",padding:"12px 0 0"}}>
+          <div style={{width:40,height:4,borderRadius:100,background:C.border}}/>
+        </div>
+        <div style={{padding:"14px 20px 0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+            <div><STypePill type={session.type}/>
+              <div style={{fontSize:17,fontWeight:700,marginTop:5}}>{session.title}</div>
+              <div style={{fontSize:12,color:C.inkMid,marginTop:1}}>{dayTh(session.date)} {dateLabel(session.date)}</div>
+            </div>
+            <button onClick={onClose} style={{background:C.grayL,border:"none",borderRadius:10,padding:"8px 10px",cursor:"pointer",color:C.inkMid,marginTop:4,flexShrink:0}}>✕</button>
+          </div>
+
+          {/* Reward banner */}
+          <div style={{background:C.goldL,border:`1px solid ${C.goldM}`,borderRadius:14,padding:"10px 16px",marginBottom:16,display:"flex",gap:16,alignItems:"center"}}>
+            <div style={{textAlign:"center"}}><div style={{fontSize:10,color:C.gold,fontWeight:600}}>XP</div><div style={{fontSize:22,fontWeight:800,color:C.gold}}>+{session.xp}</div></div>
+            {session.km>0&&<><div style={{width:1,height:28,background:C.goldM}}/><div style={{textAlign:"center"}}><div style={{fontSize:10,color:C.gold,fontWeight:600}}>เป้า</div><div style={{fontSize:22,fontWeight:800,color:C.gold}}>{session.km}<span style={{fontSize:12}}> กม.</span></div></div></>}
+            {pace&&<><div style={{width:1,height:28,background:C.goldM}}/><div style={{textAlign:"center"}}><div style={{fontSize:10,color:C.blue,fontWeight:600}}>เพซ</div><div style={{fontSize:18,fontWeight:800,color:C.blue}}>{pace}<span style={{fontSize:11}}>/กม.</span></div></div></>}
+          </div>
+
+          {/* Run stats */}
+          {isRun&&(
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label style={{fontSize:11,fontWeight:600,color:C.inkMid,display:"block",marginBottom:5}}>📍 ระยะจริง (กม.)</label>
+                <input className="inp" type="number" step="0.1" min="0" value={km} onChange={e=>setKm(e.target.value)} placeholder={session.km}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{fontSize:11,fontWeight:600,color:C.inkMid,display:"block",marginBottom:5}}>⏱ เวลา (42:30)</label>
+                <input className="inp" value={time} onChange={e=>setTime(e.target.value)} placeholder="mm:ss"/>
+              </div>
+            </div>
+          )}
+          {!isRun&&(
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,color:C.inkMid,display:"block",marginBottom:5}}>⏱ ระยะเวลา (60:00)</label>
+              <input className="inp" value={time} onChange={e=>setTime(e.target.value)} placeholder="mm:ss"/>
+            </div>
+          )}
+
+          {/* RPE Slider */}
+          <div style={{marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <label style={{fontSize:11,fontWeight:600,color:C.inkMid}}>💪 ความหนัก (RPE)</label>
+              <span style={{fontSize:13,fontWeight:700,color:RPE_COLORS[rpe]}}>{rpe}/10 · {RPE_LABELS[rpe]}</span>
+            </div>
+            <div style={{display:"flex",gap:4}}>
+              {[1,2,3,4,5,6,7,8,9,10].map(v=>(
+                <button key={v} className="rpe-btn"
+                  onClick={()=>setRpe(v)}
+                  style={{borderColor:rpe>=v?RPE_COLORS[v]:"#E4E0DB",background:rpe===v?RPE_COLORS[v]+"22":"none",color:rpe>=v?RPE_COLORS[v]:C.inkLight}}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+              <span style={{fontSize:9,color:C.green}}>ชิลมาก</span>
+              <span style={{fontSize:9,color:C.gold}}>พอดี</span>
+              <span style={{fontSize:9,color:C.red}}>หมดแรง</span>
+            </div>
+          </div>
+
+          {/* Feel */}
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:11,fontWeight:600,color:C.inkMid,display:"block",marginBottom:8}}>😊 รู้สึกยังไง?</label>
+            <div style={{display:"flex",gap:8}}>
+              {FEELS.map(f=>(
+                <button key={f.v} onClick={()=>setFeel(f.v)}
+                  style={{flex:1,background:feel===f.v?C.orangeL:"#F6F4F1",border:`1.5px solid ${feel===f.v?C.orange:C.border}`,borderRadius:12,padding:"10px 4px",cursor:"pointer",fontSize:22,transition:"all .15s",minHeight:44}}>
+                  {f.e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{marginBottom:20}}>
+            <label style={{fontSize:11,fontWeight:600,color:C.inkMid,display:"block",marginBottom:5}}>📝 โน้ต</label>
+            <textarea className="inp" rows={2} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="ความรู้สึก, สภาพอากาศ, อาการเจ็บปวด..." style={{resize:"none"}}/>
+          </div>
+
+          {doneData
+            ?<div style={{display:"flex",gap:10,marginBottom:20}}>
+              <button className="btn-ghost" style={{flex:1}} onClick={()=>{onUnlog(session.id);onClose();}}>↩ ยกเลิก</button>
+              <button className="btn-primary" style={{flex:2}} onClick={()=>{onLog(session.id,{km:parseFloat(km)||session.km,time,rpe,feel,notes});onClose();}}>✏️ แก้ไข</button>
+            </div>
+            :<button className="btn-primary" style={{marginBottom:20}} onClick={()=>{onLog(session.id,{km:parseFloat(km)||session.km,time,rpe,feel,notes});onClose();}}>
+              ✅ บันทึกการซ้อม · +{session.xp} XP
+            </button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 10K PREDICTION CARD ──────────────────────────────────────────────────────
+function PredictionCard({done,compact}){
+  const pred=useMemo(()=>predict10K(done),[done]);
+  const improve=pred.improvementVsBaseline;
+  return(
+    <div className="card shadow-md" style={{padding:compact?16:20,background:"linear-gradient(135deg,#fff 55%,#FFF0EB)",borderColor:C.orangeM}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:compact?10:14}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:C.orange,letterSpacing:.8,textTransform:"uppercase"}}>🎯 คาดการณ์ 10K</div>
+          <div style={{fontSize:compact?28:36,fontWeight:800,color:C.ink,lineHeight:1.1,marginTop:4}}>{pred.formatted}</div>
+          <div style={{fontSize:13,color:C.blue,fontWeight:600,marginTop:2}}>📍 {pred.pacePer10} /กม.</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          {improve>0&&<div style={{fontSize:12,color:C.green,fontWeight:600,display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><polyline points="18 15 12 9 6 15"/></svg>
+            {improve.toFixed(1)} นาที ดีขึ้น
+          </div>}
+          {improve<0&&<div style={{fontSize:12,color:C.red,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+            {Math.abs(improve).toFixed(1)} นาที ช้าลง
+          </div>}
+          <div style={{fontSize:10,color:C.inkLight,marginTop:2}}>vs. PR เดิม 1:38:00</div>
+        </div>
+      </div>
+      <div style={{height:1,background:C.border,marginBottom:12}}/>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:80}}>
+          <div style={{fontSize:10,color:C.inkLight}}>ความแม่นยำ</div>
+          <div style={{fontSize:12,fontWeight:600,color:C.ink,marginTop:1}}>{pred.confidence}</div>
+        </div>
+        <div style={{flex:1,minWidth:80}}>
+          <div style={{fontSize:10,color:C.inkLight}}>ข้อมูล log</div>
+          <div style={{fontSize:12,fontWeight:600,color:C.ink,marginTop:1}}>{pred.dataPoints} sessions</div>
+        </div>
+        <div style={{flex:1,minWidth:80}}>
+          <div style={{fontSize:10,color:C.inkLight}}>Adherence</div>
+          <div style={{fontSize:12,fontWeight:600,color:pred.adherence>=80?C.green:C.orange,marginTop:1}}>{pred.adherence}%</div>
+        </div>
+      </div>
+      {pred.note&&<div style={{marginTop:10,background:C.blueL,borderRadius:10,padding:"8px 12px",fontSize:11,color:C.blue}}>{pred.note}</div>}
+    </div>
+  );
+}
+
+// ─── WEEKLY SUNDAY REPORT ─────────────────────────────────────────────────────
+function WeeklyReportModal({week,done,onClose}){
+  const rep=useMemo(()=>calcWeekReport(week,done),[week,done]);
+  const pred=useMemo(()=>predict10K(done),[done]);
+  const perfLabel=rep.perfScore>=85?"ยอดเยี่ยม 🌟":rep.perfScore>=70?"ดีมาก ✅":rep.perfScore>=55?"ปานกลาง":"ต้องปรับปรุง";
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"flex-end"}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(28,26,46,.45)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+      <div style={{position:"relative",zIndex:1,width:"100%",background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"92dvh",overflowY:"auto",animation:"slideUp .3s ease",paddingBottom:"max(24px,env(safe-area-inset-bottom))"}}>
+        <div style={{display:"flex",justifyContent:"center",padding:"12px 0 0"}}>
+          <div style={{width:40,height:4,borderRadius:100,background:C.border}}/>
+        </div>
+        <div style={{padding:"14px 18px 0"}}>
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:C.orange,textTransform:"uppercase",letterSpacing:.8}}>📊 รายงานสัปดาห์ที่ {week}</div>
+              <div style={{fontSize:18,fontWeight:700,marginTop:4}}>สรุปประสิทธิภาพร่างกาย</div>
+              {rep.phase&&<div style={{fontSize:12,color:rep.phase.color,fontWeight:500,marginTop:2}}>{rep.phase.emoji} {rep.phase.name}</div>}
+            </div>
+            <button onClick={onClose} style={{background:C.grayL,border:"none",borderRadius:10,padding:"8px 10px",cursor:"pointer",color:C.inkMid}}>✕</button>
+          </div>
+
+          {/* Performance Score */}
+          <div className="card shadow-sm" style={{padding:"16px 18px",marginBottom:12,background:C.white}}>
+            <div style={{display:"flex",alignItems:"center",gap:16}}>
+              <ScoreRing score={rep.perfScore}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:C.inkMid,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}}>Performance Score</div>
+                <div style={{fontSize:20,fontWeight:700,marginTop:2}}>{perfLabel}</div>
+                <div style={{fontSize:12,color:C.inkMid,marginTop:3}}>สถานะร่างกาย: <strong style={{color:C.ink}}>{rep.bodyStatus}</strong></div>
+              </div>
+            </div>
+            <div style={{marginTop:14}}>
+              {[{l:"Adherence",v:rep.adh,c:rep.adh>=80?C.green:C.orange},
+                {l:"Volume",   v:rep.kmRate,c:rep.kmRate>=80?C.green:C.orange},
+                {l:"Effort Quality",v:Math.round(rep.perfScore*0.3/0.3),c:C.blue}
+              ].map((x,i)=>(
+                <div key={i} style={{marginBottom:i<2?8:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,color:C.inkMid}}>{x.l}</span>
+                    <span style={{fontSize:11,color:x.c,fontWeight:600}}>{x.v}%</span>
+                  </div>
+                  <div className="bar-wrap"><div className="bar-fill" style={{width:`${x.v}%`,background:x.c}}/></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Training Summary */}
+          <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.inkMid,textTransform:"uppercase",letterSpacing:.5,marginBottom:12}}>📈 สรุปสัปดาห์</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[
+                {e:"✅",l:"Sessions",v:`${rep.doneCnt}/${rep.planned}`,c:rep.adh>=80?C.green:C.orange,bg:rep.adh>=80?C.greenL:C.orangeL},
+                {e:"🏃",l:"ระยะทาง",v:`${rep.actualKm}/${rep.plannedKm} กม.`,c:C.blue,bg:C.blueL},
+                {e:"⏱",l:"Avg Pace",v:rep.avgPace?fmtPace(rep.avgPace)+"/กม.":"—",c:C.blue,bg:C.blueL},
+                {e:"💪",l:"Avg RPE",v:rep.avgRPE?`${rep.avgRPE}/10`:"—",c:rep.avgRPE?RPE_COLORS[Math.round(rep.avgRPE)]:C.gray,bg:C.grayL},
+                {e:"⚡",l:"Training Load",v:rep.load+" pts",c:C.purple,bg:C.purpleL},
+                {e:"🏅",l:"Best Session",v:rep.bestSession?ST[rep.bestSession.type]?.emoji+" "+rep.bestSession.title.split(' ').slice(0,2).join(' '):"—",c:C.gold,bg:C.goldL},
+              ].map((x,i)=>(
+                <div key={i} style={{background:x.bg,borderRadius:14,padding:"12px 12px"}}>
+                  <div style={{fontSize:16}}>{x.e}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:x.c,lineHeight:1.2,marginTop:4}}>{x.v}</div>
+                  <div style={{fontSize:10,color:C.inkMid,marginTop:2}}>{x.l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Best pace detail */}
+          {rep.bestPace&&rep.bestSession&&(
+            <div className="card shadow-sm" style={{padding:"12px 16px",marginBottom:12,background:C.blueL,borderColor:C.blueM}}>
+              <div style={{fontSize:11,fontWeight:600,color:C.blue,marginBottom:4}}>🏃 เพซดีที่สุดสัปดาห์นี้</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:C.ink}}>{rep.bestSession.title}</span>
+                <span style={{fontSize:16,fontWeight:800,color:C.blue}}>{fmtPace(rep.bestPace)}/กม.</span>
+              </div>
+            </div>
+          )}
+
+          {/* 10K Prediction */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.inkMid,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>🎯 คาดการณ์ 10K ล่าสุด</div>
+            <PredictionCard done={done} compact/>
+          </div>
+
+          {/* Tips */}
+          {rep.tips.length>0&&(
+            <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.inkMid,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>💡 Tips สัปดาห์หน้า</div>
+              {rep.tips.map((t,i)=>(
+                <div key={i} style={{display:"flex",gap:10,marginBottom:i<rep.tips.length-1?10:0,alignItems:"flex-start"}}>
+                  <div style={{width:24,height:24,borderRadius:8,background:C.orangeL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{i+1}</div>
+                  <div style={{fontSize:13,color:C.ink,lineHeight:1.5,paddingTop:2}}>{t}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button className="btn-primary" style={{marginBottom:20}} onClick={onClose}>ปิดรายงาน</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+function Dashboard({stats,done,cw,onTap}){
+  const{lvObj,nextLv,lvPct,totalXP}=stats;
+  const todayStr=fd(new Date());
+  const todaySessions=SESSIONS.filter(s=>s.date===todayStr);
+  const nextUp=SESSIONS.find(s=>s.date>=todayStr&&!done[s.id]);
+  const ph=PHASES.find(p=>p.weeks.includes(cw));
+  return(
+    <div style={{padding:"16px 16px 0",animation:"fadeUp .3s ease"}}>
+      {/* Character Card */}
+      <div className="card shadow-md" style={{padding:20,marginBottom:14,background:"linear-gradient(135deg,#fff 60%,#FFF0EB)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
+          <LevelRing pct={lvPct} emoji={lvObj.emoji}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:11,fontWeight:600,color:C.orange,letterSpacing:.8,textTransform:"uppercase"}}>Level {lvObj.lv}</div>
+            <div style={{fontSize:19,fontWeight:700,lineHeight:1.2,marginTop:1}}>{lvObj.name}</div>
+            <div style={{fontSize:12,color:C.inkMid,marginTop:2}}>{totalXP.toLocaleString()} XP</div>
+          </div>
+          <div style={{textAlign:"center",background:C.orangeL,border:`1px solid ${C.orangeM}`,borderRadius:16,padding:"10px 14px"}}>
+            <div style={{fontSize:28,fontWeight:800,color:C.orange,lineHeight:1}}>{daysToRace()}</div>
+            <div style={{fontSize:9,color:C.orange,fontWeight:600,marginTop:1}}>วันถึงแข่ง</div>
+          </div>
+        </div>
+        <div style={{marginBottom:5,display:"flex",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:C.inkMid}}>XP ถึง Lv.{lvObj.lv+1}</span>
+          <span style={{fontSize:11,color:C.orange,fontWeight:600}}>{lvPct}%</span>
+        </div>
+        <div className="bar-wrap" style={{height:8}}><div className="bar-fill xp-fill" style={{width:`${lvPct}%`}}/></div>
+        {nextLv&&<div style={{fontSize:10,color:C.inkLight,marginTop:4,textAlign:"right"}}>ต้องการ {(nextLv.xp-totalXP).toLocaleString()} XP → {nextLv.emoji} {nextLv.name}</div>}
+      </div>
+
+      {/* Stats Row */}
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        {[{e:"🏃",l:"KM สะสม",v:stats.km,c:C.green,bg:C.greenL},
+          {e:"✅",l:"Sessions",v:stats.totalSessions,c:C.blue,bg:C.blueL},
+          {e:"🔥",l:"Streak",v:`${stats.maxStreak}d`,c:C.orange,bg:C.orangeL},
+          {e:"📊",l:"จบแล้ว",v:`${stats.completionRate}%`,c:C.purple,bg:C.purpleL}
+        ].map((x,i)=>(
+          <div key={i} className="card shadow-sm" style={{padding:"12px 10px",flex:1,minWidth:0,borderColor:x.bg}}>
+            <div style={{fontSize:14}}>{x.e}</div>
+            <div style={{fontSize:19,fontWeight:700,color:x.c,lineHeight:1.1,marginTop:3}}>{x.v}</div>
+            <div style={{fontSize:9,color:C.inkLight,marginTop:2}}>{x.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Phase banner */}
+      {ph&&<div style={{background:ph.bg,border:`1px solid ${ph.color}33`,borderRadius:14,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>{ph.emoji}</span>
+        <div><div style={{fontSize:10,fontWeight:600,color:ph.color,textTransform:"uppercase",letterSpacing:.5}}>Phase {ph.id} · สัปดาห์ {cw}/18</div>
+        <div style={{fontSize:13,fontWeight:600,color:C.ink}}>{ph.name}</div></div>
+      </div>}
+
+      {/* 10K Prediction (compact) */}
+      <div style={{marginBottom:14}}><PredictionCard done={done} compact/></div>
+
+      {/* Today missions */}
+      <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:10}}>📋 Mission วันนี้</div>
+      {todaySessions.length>0
+        ?todaySessions.map(s=><SessionCard key={s.id} s={s} doneData={done[s.id]} onTap={onTap}/>)
+        :<div className="card" style={{padding:"20px",textAlign:"center",marginBottom:8}}>
+          <div style={{fontSize:22,marginBottom:4}}>😴</div>
+          <div style={{fontSize:13,fontWeight:500,color:C.inkMid}}>วันพักวันนี้</div>
+          {nextUp&&<div style={{fontSize:11,color:C.inkLight,marginTop:6}}>ถัดไป: {dayTh(nextUp.date)} {dateLabel(nextUp.date)} · {nextUp.title}</div>}
+        </div>}
+
+      <div className="card shadow-sm" style={{padding:"16px 18px",marginBottom:14,marginTop:8}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:12}}>⚡ Progress รายเฟส</div>
+        {PHASES.map(p=><PhaseBar key={p.id} phaseId={p.id} weeklyDone={stats.weeklyDone}/>)}
+      </div>
+      <div style={{height:90}}/>
+    </div>
+  );
+}
+
+function Schedule({done,onTap}){
+  const cw=getCW();
+  const[week,setWeek]=useState(cw);
+  const ws=SESSIONS.filter(s=>s.week===week);
+  const ph=PHASES.find(p=>p.weeks.includes(week));
+  const dc=ws.filter(s=>done[s.id]).length;
+  const wKm=ws.filter(s=>done[s.id]).reduce((a,s)=>a+(parseFloat(done[s.id]?.km)||s.km),0);
+  return(
+    <div style={{padding:"16px 16px 0",animation:"fadeUp .3s ease"}}>
+      <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <button onClick={()=>setWeek(w=>Math.max(1,w-1))} style={{background:C.grayL,border:"none",borderRadius:10,padding:"8px 14px",cursor:"pointer",color:C.inkMid,minWidth:44,fontSize:18}}>‹</button>
+          <div style={{flex:1,textAlign:"center"}}>
+            <div style={{fontSize:16,fontWeight:700}}>สัปดาห์ที่ {week}</div>
+            {ph&&<div style={{fontSize:11,color:ph.color,fontWeight:600}}>{ph.emoji} {ph.name}</div>}
+          </div>
+          <button onClick={()=>setWeek(w=>Math.min(18,w+1))} style={{background:C.grayL,border:"none",borderRadius:10,padding:"8px 14px",cursor:"pointer",color:C.inkMid,minWidth:44,fontSize:18}}>›</button>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          {[{l:"Sessions",v:`${dc}/${ws.length}`,c:C.green},{l:"KM สัปดาห์",v:`${wKm.toFixed(1)}`,c:C.blue},{l:"XP",v:ws.filter(s=>done[s.id]).reduce((a,s)=>a+(done[s.id]?.xp??0),0),c:C.gold}]
+            .map((x,i)=><div key={i} style={{flex:1,background:C.bg2,borderRadius:12,padding:"10px 8px",textAlign:"center"}}>
+              <div style={{fontSize:17,fontWeight:700,color:x.c}}>{x.v}</div>
+              <div style={{fontSize:10,color:C.inkLight}}>{x.l}</div>
+            </div>)}
+        </div>
+      </div>
+      {ws.map(s=><SessionCard key={s.id} s={s} doneData={done[s.id]} onTap={onTap}/>)}
+      <div style={{height:90}}/>
+    </div>
+  );
+}
+
+function Achievements({stats}){
+  return(
+    <div style={{padding:"16px 16px 0",animation:"fadeUp .3s ease"}}>
+      <div className="card shadow-sm" style={{padding:"16px 18px",marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:14}}>🎮 Level Roadmap</div>
+        {LEVELS.map((l,i)=>{
+          const u=stats.totalXP>=l.xp,ic=l.lv===stats.lvObj.lv;
+          return<div key={l.lv} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:i<LEVELS.length-1?`1px solid ${C.border}`:"none"}}>
+            <div style={{width:40,height:40,borderRadius:12,background:ic?C.orangeL:u?C.greenL:C.grayL,border:`1.5px solid ${ic?C.orange:u?C.greenM:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+              {u?l.emoji:"🔒"}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,color:ic?C.orange:u?C.ink:C.inkLight}}>Lv.{l.lv} · {l.name}</div>
+              <div style={{fontSize:11,color:C.inkLight}}>{l.xp.toLocaleString()} XP{ic?" ← คุณอยู่ที่นี่":""}</div>
+            </div>
+            {ic&&<span style={{animation:"pulse 2s infinite"}}>◀</span>}
+            {u&&!ic&&<span style={{color:C.green}}>✓</span>}
+          </div>;
+        })}
+      </div>
+      <div className="card shadow-sm" style={{padding:"16px 18px",marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:12}}>🏅 Personal Records</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[{e:"📏",l:"ระยะสะสม",v:`${stats.km} กม.`,c:C.green,bg:C.greenL},
+            {e:"🗺️",l:"วิ่งไกลสุด",v:`${stats.longestRun} กม.`,c:C.blue,bg:C.blueL},
+            {e:"⚡",l:"XP ทั้งหมด",v:stats.totalXP.toLocaleString(),c:C.gold,bg:C.goldL},
+            {e:"🔥",l:"Streak สูงสุด",v:`${stats.maxStreak} วัน`,c:C.orange,bg:C.orangeL},
+            {e:"✅",l:"Sessions",v:stats.totalSessions,c:C.purple,bg:C.purpleL},
+            {e:"💪",l:"Gym Sessions",v:stats.gym,c:C.pink,bg:C.pinkL},
+          ].map((r,i)=><div key={i} style={{background:r.bg,borderRadius:14,padding:"14px"}}>
+            <div style={{fontSize:18}}>{r.e}</div>
+            <div style={{fontSize:20,fontWeight:700,color:r.c,marginTop:4,lineHeight:1}}>{r.v}</div>
+            <div style={{fontSize:10,color:C.inkMid,marginTop:3}}>{r.l}</div>
+          </div>)}
+        </div>
+      </div>
+      <div className="card shadow-sm" style={{padding:"16px 18px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase"}}>🏆 Badges</div>
+          <div style={{fontSize:11,color:C.inkLight}}>{stats.earnedBadges.length}/{BADGES.length}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          {BADGES.map(b=>{
+            const e=stats.earnedBadges.includes(b.id);
+            return<div key={b.id} className={e?"":"badge-locked"}
+              style={{textAlign:"center",padding:"12px 4px",background:e?C.orangeL:C.grayL,borderRadius:14,border:`1px solid ${e?C.orangeM:C.border}`}}>
+              <div style={{fontSize:24}}>{b.emoji}</div>
+              <div style={{fontSize:9,color:e?C.ink:C.inkLight,marginTop:4,lineHeight:1.3,fontWeight:e?500:400}}>{b.name}</div>
+            </div>;
+          })}
+        </div>
+      </div>
+      <div style={{height:90}}/>
+    </div>
+  );
+}
+
+function Stats({stats,done}){
+  const cw=getCW();
+  const[reportWeek,setReportWeek]=useState(cw);
+  const[showReport,setShowReport]=useState(false);
+  const totalXPPossible=SESSIONS.reduce((a,s)=>a+s.xp,0);
+
+  // Pace trend (last 6 weeks of logged runs)
+  const paceHistory=[];
+  for(let w=Math.max(1,cw-5);w<=cw;w++){
+    const runs=SESSIONS.filter(s=>s.week===w&&done[s.id]?.time&&s.type.startsWith('run_'));
+    const paces=runs.map(s=>calcPaceSecKm(done[s.id]?.time,parseFloat(done[s.id]?.km)||s.km)).filter(Boolean);
+    paceHistory.push({w,avg:paces.length?paces.reduce((a,b)=>a+b,0)/paces.length:null,cnt:paces.length});
+  }
+  const hasPaceData=paceHistory.some(p=>p.avg);
+
+  return(
+    <div style={{padding:"16px 16px 0",animation:"fadeUp .3s ease"}}>
+      {/* 10K Prediction - prominent */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:10}}>🎯 คาดการณ์เวลา 10K</div>
+        <PredictionCard done={done}/>
+      </div>
+
+      {/* Weekly Report Button */}
+      <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:12}}>📊 รายงานประจำสัปดาห์</div>
+        <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+          <button onClick={()=>setReportWeek(w=>Math.max(1,w-1))} style={{background:C.grayL,border:"none",borderRadius:8,padding:"8px 12px",cursor:"pointer",color:C.inkMid,fontSize:16}}>‹</button>
+          <div style={{flex:1,textAlign:"center",fontSize:13,fontWeight:600}}>สัปดาห์ที่ {reportWeek}</div>
+          <button onClick={()=>setReportWeek(w=>Math.min(cw,w+1))} style={{background:C.grayL,border:"none",borderRadius:8,padding:"8px 12px",cursor:"pointer",color:C.inkMid,fontSize:16}}>›</button>
+        </div>
+        <button className="btn-primary" onClick={()=>setShowReport(true)}>📊 ดูรายงานสัปดาห์ที่ {reportWeek}</button>
+      </div>
+
+      {/* Pace Trend */}
+      {hasPaceData&&(
+        <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:10}}>📈 Pace Trend (สัปดาห์ล่าสุด)</div>
+          <div style={{display:"flex",gap:6,alignItems:"flex-end",height:80}}>
+            {paceHistory.map((p,i)=>{
+              if(!p.avg)return<div key={i} style={{flex:1,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+                <div style={{fontSize:9,color:C.inkLight,textAlign:"center"}}>W{p.w}<br/>—</div>
+              </div>;
+              const best=Math.min(...paceHistory.filter(x=>x.avg).map(x=>x.avg));
+              const worst=Math.max(...paceHistory.filter(x=>x.avg).map(x=>x.avg));
+              const range=worst-best||1;
+              const isCur=p.w===cw;
+              // Invert: slower pace (higher number) = shorter bar (worse)
+              const h=Math.max(20,Math.round(((worst-p.avg)/range)*55+15));
+              return(
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                  <div style={{fontSize:8,color:isCur?C.blue:C.inkMid,fontWeight:isCur?"700":"400"}}>{fmtPace(p.avg)}</div>
+                  <div style={{width:"100%",height:h,background:isCur?C.blue:C.blueM,borderRadius:"6px 6px 0 0",minHeight:16}}/>
+                  <div style={{fontSize:8,color:isCur?C.blue:C.inkLight}}>W{p.w}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:10,color:C.inkMid,marginTop:8,textAlign:"center"}}>แท่งสูง = เพซเร็ว (ดีกว่า) 🏃</div>
+        </div>
+      )}
+
+      {/* Weekly KM Chart */}
+      <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:4}}>🏃 KM รายสัปดาห์</div>
+        <div style={{fontSize:11,color:C.inkLight,marginBottom:10}}>🟠 = สัปดาห์ปัจจุบัน</div>
+        <WeekKmChart weeklyKm={stats.weeklyKm}/>
+      </div>
+
+      {/* Overall Progress */}
+      <div className="card shadow-sm" style={{padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.inkMid,letterSpacing:.5,textTransform:"uppercase",marginBottom:12}}>📊 ภาพรวม 18 สัปดาห์</div>
+        {[{l:"Sessions เสร็จ",v:stats.totalSessions,t:TOTAL_SESSIONS,c:C.green},
+          {l:"KM สะสม",v:stats.km,t:250,c:C.blue},
+          {l:"XP สะสม",v:stats.totalXP,t:totalXPPossible,c:C.gold},
+        ].map((r,i)=>(
+          <div key={i} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:12,color:C.inkMid}}>{r.l}</span>
+              <span style={{fontSize:12,color:r.c,fontWeight:600}}>{typeof r.v==="number"&&r.v>999?r.v.toLocaleString():r.v} / {typeof r.t==="number"&&r.t>999?r.t.toLocaleString():r.t}</span>
+            </div>
+            <div className="bar-wrap"><div className="bar-fill" style={{width:`${Math.min(100,Math.round((r.v/r.t)*100))}%`,background:r.c}}/></div>
+          </div>
+        ))}
+      </div>
+
+      {showReport&&<WeeklyReportModal week={reportWeek} done={done} onClose={()=>setShowReport(false)}/>}
+      <div style={{height:90}}/>
+    </div>
+  );
+}
+
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
+function App({headerRight}{
+  const[tab,setTab]=useState("home");
+  const[done,setDone]=useState(()=>{try{return JSON.parse(localStorage.getItem('ptm:v5:done')||'{}')}catch{return{}}});
+  const[modal,setModal]=useState(null);
+  const[xpAnim,setXpAnim]=useState(null);
+  const[badgeAnim,setBadgeAnim]=useState(null);
+  const[autoReport,setAutoReport]=useState(null); // Sunday auto-show
+  const cw=getCW();
+
+  // Inject CSS once
+  useEffect(()=>{
+    const el=document.createElement('style');el.textContent=CSS;document.head.appendChild(el);
+    // Auto Sunday report
+    const today=new Date();
+    if(today.getDay()===0){
+      const key=`ptm:sunday:${fd(today)}`;
+      if(!localStorage.getItem(key)){setAutoReport(cw);localStorage.setItem(key,'shown');}
+    }
+  },[]);
+
+  useEffect(()=>{
+    try{localStorage.setItem('ptm:v5:done',JSON.stringify(done));}catch(e){}
+  },[done]);
+
+  const stats=useMemo(()=>calcStats(done),[done]);
+
+  const logSession=(id,data)=>{
+    const s=SESSIONS.find(x=>x.id===id);if(!s)return;
+    const prev=calcStats(done).earnedBadges;
+    const nd={...done,[id]:{km:data.km??s.km,xp:s.xp,time:data.time||"",rpe:data.rpe||5,feel:data.feel||3,notes:data.notes||"",at:new Date().toISOString()}};
+    setDone(nd);
+    setXpAnim({xp:s.xp,k:Date.now()});
+    setTimeout(()=>setXpAnim(null),2600);
+    const nb=calcStats(nd).earnedBadges.filter(b=>!prev.includes(b));
+    if(nb.length>0)setTimeout(()=>{setBadgeAnim(BADGES.find(b=>b.id===nb[0]));setTimeout(()=>setBadgeAnim(null),3200);},1300);
+  };
+  const unlog=(id)=>{const nd={...done};delete nd[id];setDone(nd);};
+
+  const TABS=[{id:"home",l:"HQ",e:"⚡"},{id:"schedule",l:"Missions",e:"📋"},{id:"trophies",l:"Trophies",e:"🏆"},{id:"stats",l:"Stats",e:"📊"}];
+
+  return(
+    <div style={{minHeight:"100dvh",maxWidth:430,margin:"0 auto",background:C.bg,position:"relative",overflowX:"hidden"}}>
+      {/* Header */}
+      <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,padding:"12px 16px 11px",position:"sticky",top:0,zIndex:50,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:C.ink}}>Personal Training Mission</div>
+          <div style={{fontSize:11,color:C.orange,fontWeight:500,marginTop:1}}>W{cw}/18 · {stats.lvObj.emoji} Lv.{stats.lvObj.lv} · {stats.totalXP.toLocaleString()} XP</div>
+        </div>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}><button onClick={()=>setAutoReport(cw)} style={{background:C.grayL,border:'none',borderRadius:10,padding:'7px 10px',cursor:'pointer',fontSize:13,color:C.inkMid}}>📊</button>{headerRight}</div>
+      </div>
+
+      {/* Scroll */}
+      <div style={{overflowY:"auto",height:"calc(100dvh - 56px - 62px - env(safe-area-inset-bottom))"}}>
+        {tab==="home"     &&<Dashboard stats={stats} done={done} cw={cw} onTap={setModal}/>}
+        {tab==="schedule" &&<Schedule  done={done} onTap={setModal}/>}
+        {tab==="trophies" &&<Achievements stats={stats}/>}
+        {tab==="stats"    &&<Stats stats={stats} done={done}/>}
+      </div>
+
+      {/* Bottom Nav */}
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.white,borderTop:`1px solid ${C.border}`,display:"flex",paddingBottom:"env(safe-area-inset-bottom)",zIndex:100}}>
+        {TABS.map(t=>(
+          <button key={t.id} className={`tab-btn${tab===t.id?" on":""}`} onClick={()=>setTab(t.id)}>
+            <span style={{fontSize:20}}>{t.e}</span><span>{t.l}</span>
+          </button>
+        ))}
+      </div>
+
+      {modal&&<LogModal session={modal} doneData={done[modal.id]} onLog={logSession} onUnlog={unlog} onClose={()=>setModal(null)}/>}
+      {autoReport&&<WeeklyReportModal week={autoReport} done={done} onClose={()=>setAutoReport(null)}/>}
+
+      {xpAnim&&<div key={xpAnim.k} style={{position:"fixed",top:"38%",left:"50%",zIndex:500,background:C.orange,color:"#fff",padding:"10px 26px",borderRadius:100,fontSize:"1.35rem",fontWeight:800,boxShadow:"0 6px 24px rgba(232,80,26,.4)",animation:"xpFloat 2.5s ease-out forwards",whiteSpace:"nowrap",pointerEvents:"none"}}>⚡ +{xpAnim.xp} XP!</div>}
+      {badgeAnim&&<div key={badgeAnim.id} style={{position:"fixed",top:"50%",left:"50%",zIndex:500,background:C.white,border:`2px solid ${C.gold}`,borderRadius:24,padding:"28px 36px",textAlign:"center",boxShadow:"0 20px 60px rgba(28,26,46,.2)",animation:"popIn .45s cubic-bezier(.4,0,.2,1) forwards",minWidth:220}}>
+        <div style={{fontSize:54}}>{badgeAnim.emoji}</div>
+        <div style={{fontSize:10,fontWeight:700,color:C.gold,letterSpacing:1.5,margin:"10px 0 4px",textTransform:"uppercase"}}>Badge Unlocked!</div>
+        <div style={{fontSize:17,fontWeight:700,color:C.ink}}>{badgeAnim.name}</div>
+        <div style={{fontSize:12,color:C.inkMid,marginTop:4}}>{badgeAnim.desc}</div>
+      </div>}
+    </div>
+  );
+}
+
+// ── GOOGLE DRIVE SYNC ─────────────────────────────────────────────────────────
+let DRIVE_URL=localStorage.getItem('ptm:drive_url')||'';
+async function driveBackup(data){
+  if(!DRIVE_URL)return;
+  try{await fetch(DRIVE_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'save',key:'ptm:v5:done',value:JSON.stringify(data)})});}
+  catch(e){}
+}
+async function driveRestore(){
+  if(!DRIVE_URL)return null;
+  try{
+    const r=await fetch(DRIVE_URL+'?action=load&key=ptm:v5:done');
+    const j=await r.json();
+    return j.value?JSON.parse(j.value):null;
+  }catch{return null;}
+}
+
+// ── DRIVE SETTINGS MODAL ──────────────────────────────────────────────────────
+function DriveModal({onClose}){
+  const[url,setUrl]=useState(DRIVE_URL);
+  const[status,setStatus]=useState('');
+  const[busy,setBusy]=useState(false);
+  const save=()=>{DRIVE_URL=url;localStorage.setItem('ptm:drive_url',url);setStatus('✅ บันทึกแล้ว');};
+  const testBackup=async()=>{
+    setBusy(true);setStatus('กำลัง backup...');
+    try{const d=JSON.parse(localStorage.getItem('ptm:v5:done')||'{}');await driveBackup(d);setStatus('✅ Backup สำเร็จ');}
+    catch(e){setStatus('❌ ล้มเหลว: '+e.message);}
+    setBusy(false);
+  };
+  const restore=async()=>{
+    setBusy(true);setStatus('กำลัง restore...');
+    const d=await driveRestore();
+    if(d){localStorage.setItem('ptm:v5:done',JSON.stringify(d));setStatus('✅ Restore สำเร็จ — รีเฟรชหน้า');window.location.reload();}
+    else setStatus('❌ ไม่มีข้อมูล');
+    setBusy(false);
+  };
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"flex-end"}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(28,26,46,.45)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+      <div style={{position:"relative",zIndex:1,width:"100%",background:"#fff",borderRadius:"24px 24px 0 0",padding:"20px 20px max(24px,env(safe-area-inset-bottom))",animation:"slideUp .28s ease",maxWidth:430,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:16}}><div style={{width:40,height:4,borderRadius:100,background:"#E4E0DB"}}/></div>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>☁️ Google Drive Sync</div>
+        <div style={{fontSize:12,color:"#6B6785",marginBottom:16,lineHeight:1.6}}>วาง Apps Script Web App URL เพื่อ sync ข้อมูลกับ Google Drive</div>
+        <label style={{fontSize:11,fontWeight:600,color:"#6B6785",display:"block",marginBottom:6}}>Apps Script URL</label>
+        <input className="inp" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..." style={{marginBottom:12}}/>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <button className="btn-ghost" style={{flex:1}} onClick={save}>💾 บันทึก</button>
+          <button className="btn-ghost" style={{flex:1,opacity:busy?.6:1}} onClick={restore} disabled={busy}>☁️ Restore</button>
+          <button className="btn-primary" style={{flex:1,padding:"11px 8px",opacity:busy?.6:1}} onClick={testBackup} disabled={busy}>⬆️ Backup</button>
+        </div>
+        {status&&<div style={{background:status.includes('✅')?"#EDFBF4":"#FFF0EB",border:`1px solid ${status.includes('✅')?"#A7F3D0":"#FFD4C2"}`,borderRadius:12,padding:"10px 14px",fontSize:13,color:status.includes('✅')?"#0A7C52":"#E8501A",textAlign:"center"}}>{status}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── ROOT WRAPPER WITH DRIVE ───────────────────────────────────────────────────
+function RootApp(){
+  const[driveOpen,setDriveOpen]=useState(false);
+  const cw=getCW();
+
+  useEffect(()=>{
+    setTimeout(()=>{
+      const sp=document.getElementById('splash');
+      if(sp){sp.style.opacity='0';setTimeout(()=>sp.remove(),400);}
+    },700);
+  },[]);
+
+  return(
+    <>
+      <App headerRight={<button onClick={()=>setDriveOpen(true)} style={{background:DRIVE_URL?"#EDFBF4":"#F1F0EE",border:`1px solid ${DRIVE_URL?"#A7F3D0":"#E4E0DB"}`,borderRadius:10,padding:"7px 10px",cursor:"pointer",fontSize:14,color:DRIVE_URL?"#0A7C52":"#6B6785"}}>☁️</button>}/>
+      {driveOpen&&<DriveModal onClose={()=>setDriveOpen(false)}/>}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<RootApp/>);
+</script>
+</body>
+</html>
